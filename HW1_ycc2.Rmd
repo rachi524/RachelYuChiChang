@@ -29,7 +29,7 @@ gse_gpl_table = data.table(dbReadTable(geo_con, 'gse_gpl'))
 =====================
 "Use the GEOmetabd package to find all HCV gene expression data using the Illumina platform submitted by an investigator at Yale. This should be done with a single query, showing the title, the GSE accession number, the GPL accession number and the manufacturer and the description of the platform used."
 
-Comment from Jun H: This looks good! The only suggestions I would have would be to search for "Hepatitis C" in addition to "HCV" under the gse.title field.
+Comment from Jun H: This looks good! The only suggestion I have would be to search for "Hepatitis C" in addition to "HCV" under the gse.title field.
 
 ```{r }
 dbGetQuery(geo_con, "SELECT gse.title, gse.gse, gpl.gpl, gpl.manufacturer, gpl.description FROM (gse JOIN gse_gpl ON gse.gse=gse_gpl.gse) j JOIN gpl ON j.gpl=gpl.gpl WHERE gpl.Title LIKE '%Illumina%' AND gse.contact LIKE '%Institute: Yale %'  AND gse.Title LIKE '%HCV%' LIMIT 5;")
