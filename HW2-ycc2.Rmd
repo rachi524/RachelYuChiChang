@@ -1,0 +1,78 @@
+BIOSTAT-578 HW2 YUCHI CHANG
+========================================================
+Background reading:
+
+Reading NCBI's GEO microarray file
+http://www2.warwick.ac.uk/fac/sci/moac/people/students/peter_cock/r/geo/
+
+Setup the bioconductor packages.
+```{r}
+source("http://bioconductor.org/biocLite.R")
+# Install all core packages and update all installed packages
+biocLite()
+
+biocLite(c("GEOmetadb", "GEOquery", "lumi", "limma"))
+
+
+
+library("RSQLite")
+library(GEOmetadb)
+library(lumi)
+library(limma)
+library(data.table)
+library(pheatmap)
+```
+Establish connection to the db:
+
+```{r}
+geo_con <- dbConnect(SQLite(),'GEOmetadb.sqlite')
+```
+=======================================
+1. Get data for :
+Qian, F., Bolen, C. R., Jing, C., Wang, X., Zheng, W., Zhao, H., et al. (2013). Impaired toll-like receptor 3-mediated immune responses from macrophages of patients chronically infected with hepatitis C virus. Clinical and Vaccine Immunology : CVI, 20(2), 146–155. doi:10.1128/CVI.00530-12
+
+
+```{r}
+
+dbGetQuery(geo_con, "SELECT gse.gse, gse.pubmed_id, gse.contributor FROM gse WHERE gse.title LIKE '%Impaired TLR3-mediated immune responses from macrophages of patients chronically infected with Hepatitis C virus%';")
+library(GEOquery)
+
+gse <- getGEO("GSE40812", destdir = "E:\\Users\\Chipooh\\Documents\\GitHub\\RachelYuChiChang")[[1]]
+#gse <- getGEO("GSE40812", destdir = "E:\\Users\\Chipooh\\Documents\\GitHub\\RachelYuChiChang", GSEMatrix=FALSE)[[1]]
+
+```
+
+Select only macrophage elements. Add HCV and treatment columns.
+
+```{r}
+pd <- pData(gse)
+mmpd <- pd[pd$source_name_ch1=="Monocyte-derived Macrophage",]
+mmeset<-gse[,rownames(mmpd)]
+#characteristic_ch1 indicates VL++ or VL--
+#characteristic_ch1.2 indicates Mock or Poly IC
+mmpd$HCV <- gsub(".*: ", "", mmpd$characteristics_ch1)
+#mmpd$HCV <- ifelse(mmpd$HCV=="Neg", "-", "+")
+mmpd$treatment <- tolower(gsub(".*: ", "", mmpd$characteristics_ch1.2))
+
+```
+
+Normalize data
+
+```{r, cache=TRUE}
+
+mmMatrix<-model.matrix(~0+HCV, mmpd)
+mmfit<-lmFit(mmeset, mmMatrix)
+mmebfit<-eBayes(mmfit)
+
+
+
+```
+
+```{r}
+cont_matrix <- makeContrasts(HCVPos-HCVNeg, levels=mmMatrix)
+fit2 <- contrasts.fit(mmfit, cont_matrix)
+fit2 <- eBayes(fit2)
+tt <- topTable(fit2, adjust = "fdr")
+
+pheatmap(exprs(mmeset), kmeans_k = 43)
+```
