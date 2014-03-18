@@ -1,0 +1,134 @@
+HW3
+========================================================
+
+#setup background
+```{r}
+source("http://bioconductor.org/biocLite.R")
+# Install all core packages and update all installed packages
+biocLite()
+
+biocLite(c("GEOmetadb", "GEOquery", "lumi", "limma"))
+
+
+
+library("RSQLite")
+library(GEOmetadb)
+library(lumi)
+library(limma)
+library(data.table)
+library(pheatmap)
+library(GEOquery)
+source("http://bioconductor.org/biocLite.R")
+biocLite("SRAdb")
+```
+
+#Get data
+```{r}
+
+# Download the mapping information and processed data
+gd <- getGEO("GSE45735", destdir = "./Data/GEO")
+pd <- pData(gd[[1]])
+getGEOSuppFiles("GSE45735", makeDirectory=FALSE, baseDir = "Data/GEO/")
+## The T14 file is problematic and needs to be fixed by hand
+```
+
+You can also embed plots, for example:
+
+```{r }
+
+
+# Note the regular expression to grep file names
+files <- list.files(path = "Data/GEO/", pattern = "GSE45735_T.*.gz", full.names = TRUE)
+file_list <- lapply(files, read.table, header=TRUE)
+# Remove duplicated rows
+file_list_unique <- lapply(file_list, function(x){x<-x[!duplicated(x$Gene),]; 
+                                                  x <- x[order(x$Gene),]; 
+                                                  rownames(x) <- x$Gene;
+                                                  x[,-1]})
+# Take the intersection of all genes
+gene_list <- Reduce(intersect, lapply(file_list_unique, rownames))
+file_list_unique <- lapply(file_list_unique, "[", gene_list,)
+matrix <- as.matrix(do.call(cbind, file_list_unique))
+
+# Clean up the pData
+pd_small <- pd[!grepl("T13_Day8",pd$title),]
+pd_small$Day <- sapply(strsplit(gsub(" \\[PBMC\\]", "", pd_small$title),"_"),"[",2)
+pd_small$subject <- sapply(strsplit(gsub(" \\[PBMC\\]", "", pd_small$title),"_"),"[",1)
+colnames(matrix) <- rownames(pd_small)
+
+#Create a new expression set
+new_set <- ExpressionSet(assayData = matrix+1)
+pData(new_set) <- pd_small
+
+#design matrix with estimated weights
+design <- model.matrix(~subject+Day, new_set)
+new_set_voom <- voom(new_set,design = design)
+
+lm <- lmFit(new_set_voom, design)
+eb <- eBayes(lm)
+# Look at the other time-points
+topTable(eb, coef = "DayDay6")
+
+for (i in 1:10) {
++ append(t, toptable(eb, coef = paste("DayDay", i, sep="")))
++ }
+heatmap(data.matrix(t[c(1, 7:10)]))
+
+
+
+```
+
+
+```{r}
+library(BiocInstaller)
+biocLite("GSEABase")
+
+c2_set <- getGmt("GSEA/c2.all.v4.0.symbols.gmt")
+gene_ids <- geneIds(c2_set)
+# Camera requires gene-indices
+sets_indices <- symbols2indices(gene_ids, rownames(new_set))
+
+# Note that camera works on voom objects
+cont_matrix <- makeContrasts("DayDay1", levels=design)
+res <- camera(new_set_voom, sets_indices, design=design, cont_matrix)
+res[1:10, ]
+
+res <- vector("list",length = 10)
+for(i in 1:10)
+  {
+  contrast <- paste0("DayDay",i)
+  cont_matrix <- makeContrasts(contrast, levels=design)
+  res[[i]] <- camera(new_set_voom, sets_indices, design=design, contrast=cont_matrix, sort=FALSE)
+}
+
+library(pheatmap)
+PValue <- sapply(res, function(x){ifelse(x$Direction=="Up", -10*log10(x$PValue), 10*log10(x$PValue))})
+rownames(PValue) <- rownames(res[[1]])
+PValue_max <- rowMax(abs(PValue))
+PValue_small <- PValue[PValue_max>30, ]
+anno <- data.frame(Time=paste0("Day",1:10))
+rownames(anno) <- colnames(PValue_small)  <- paste0("Day",1:10)
+pheatmap(PValue_small, cluster_cols=FALSE)
+
+BTM_set <- getGmt("GSEA/BTM_for_GSEA_20131008.gmt")
+gene_ids <- geneIds(BTM_set)
+# Camera requires gene-indices
+sets_indices <- symbols2indices(gene_ids, rownames(new_set))
+
+res <- vector("list",length = 10)
+for(i in 1:10)
+  {
+  contrast <- paste0("DayDay",i)
+  cont_matrix <- makeContrasts(contrast, levels=design)
+  res[[i]] <- camera(new_set_voom, sets_indices, design=design, contrast=cont_matrix, sort=FALSE)
+}
+
+PValue <- sapply(res, function(x){ifelse(x$Direction=="Up", -10*log10(x$PValue), 10*log10(x$PValue))})
+rownames(PValue) <- rownames(res[[1]])
+PValue_max <- rowMax(abs(PValue))
+PValue_small <- PValue[PValue_max>30, ]
+anno <- data.frame(Time=paste0("Day",1:10))
+rownames(anno) <- colnames(PValue_small)  <- paste0("Day",1:10)
+pheatmap(PValue_small, cluster_cols=FALSE)
+```
+
